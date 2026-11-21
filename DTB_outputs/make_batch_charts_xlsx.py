@@ -95,7 +95,10 @@ for b in batches:
             else:
                 ws.write_blank(rr, c0 + j, None, f_txt)
         for j, c in enumerate(F, start=1):
-            ws.write_number(rr, c0 + 4 + j, cum.loc[idx, c], f_num5)
+            if cum.loc[idx, c] > 0:
+                ws.write_number(rr, c0 + 4 + j, cum.loc[idx, c], f_num5)
+            else:
+                ws.write_blank(rr, c0 + 4 + j, None, f_txt)
     f_first, f_last = r0 + 2, r0 + 1 + len(fe)
     ws.set_column(0, 0, 11); ws.set_column(1, 6, 10); ws.set_column(7, 7, 12); ws.set_column(8, 8, 2)
     ws.set_column(c0, c0, 11); ws.set_column(c0 + 1, c0 + 8, 12.5)
@@ -144,7 +147,7 @@ for b in batches:
                     int(m.to_predict.sum()), float(d.elapsed_time.max()),
                     d0.vcd, d0.tcd, d0.substrate, d0.byproduct, d0.volume,
                     *[float(d[c].sum()) for c in F], *[int(d[c].notna().sum()) for c in F],
-                    len(m), m_first, m_last])
+                    len(m), m_first, m_last, f_first, f_last])
 
 ov.write(0, 0, 'Decode the Bioreactor – one sheet per batch', f_title)
 ov.write(1, 0, f'{len(batches)} batches: {len(batches) - len(test)} training (fully measured), {len(test)} test '
@@ -185,7 +188,8 @@ for col, var in [(1, 'vcd'), (2, 'tcd'), (3, 'substrate'), (4, 'byproduct'), (5,
 # ---- Live vs dead cells, and substrate, for every batch ----
 sec = 5 + len(summary) + 2 + 3 * 18 + 2
 ov.write(sec, 0, 'Cell culture behaviour per batch: live cells (VCD), dead cells (TCD − VCD) and substrate (right axis)', f_title)
-ov.write(sec + 1, 0, 'Green = live (viable) cells, black = dead cells (both on a log-scale left axis, so the small dead-cell numbers stay visible), dashed orange = substrate concentration on the right axis. '
+ov.write(sec + 1, 0, 'Left axis (log): green = live (viable) cells, black = dead cells. Right axis (log): dashed olive = substrate concentration in the culture, '
+                     'thin lines = cumulative amount added of each feed (feed_substrate cyan, feed_b orange, feed_c brown, feed_d pink). '
                      'Test batches show day 0 only. Two overlay charts first, then one chart per batch.', f_sub)
 row0 = sec + 3
 for k, (col, nm, clr) in enumerate([(1, 'Live cells (VCD) – all training batches', '2CA02C'), (7, 'Dead cells (TCD − VCD) – all training batches', '000000')]):
@@ -203,13 +207,13 @@ for k, (col, nm, clr) in enumerate([(1, 'Live cells (VCD) – all training batch
     ch.set_size({'width': 620, 'height': 340})
     ov.insert_chart(row0, k * 9, ch)
 row0 += 19
-NC = 4
+NC = 3
 for i, s in enumerate(summary):
     ch = wb.add_chart({'type': 'scatter', 'subtype': 'straight_with_markers'})
     ch.set_title({'name': s[0] + (' (test – day 0 only)' if s[1] == 'test' else ''), 'name_font': {'size': 10}})
     ch.set_x_axis({'min': 0, 'max': 14, 'major_unit': 2, 'num_font': {'size': 8}})
     ch.set_y_axis({'name': 'cells (log scale)', 'log_base': 10, 'min': 0.001, 'name_font': {'size': 8}, 'num_font': {'size': 8}, 'major_gridlines': {'visible': True, 'line': {'color': 'E7E6E6'}}})
-    ch.set_y2_axis({'name': 'substrate', 'name_font': {'size': 8}, 'num_font': {'size': 8}})
+    ch.set_y2_axis({'name': 'substrate conc. & cumulative feeds (log)', 'log_base': 10, 'min': 0.0001, 'name_font': {'size': 8}, 'num_font': {'size': 8}})
     ch.show_blanks_as('span')
     ch.set_legend({'position': 'bottom', 'font': {'size': 8}})
     def add(col, name, clr, y2=False, dash=False):
@@ -223,8 +227,12 @@ for i, s in enumerate(summary):
         ch.add_series(d)
     add(1, 'live (VCD)', '2CA02C')
     add(7, 'dead (TCD−VCD)', '000000')
-    add(3, 'substrate', 'FF7F0E', y2=True, dash=True)
-    ch.set_size({'width': 400, 'height': 260})
-    ov.insert_chart(row0 + (i // NC) * 14, (i % NC) * 6, ch)
+    add(3, 'substrate conc.', 'BCBD22', y2=True, dash=True)
+    for j, fc in enumerate(F, start=1):
+        if s[21] <= s[22]:
+            ch.add_series({'name': 'cum ' + fc, 'categories': [s[0], s[21], 9, s[22], 9], 'values': [s[0], s[21], 9 + 4 + j, s[22], 9 + 4 + j],
+                           'marker': {'type': 'none'}, 'line': {'color': COL[fc], 'width': 1.25}, 'y2_axis': True})
+    ch.set_size({'width': 560, 'height': 330})
+    ov.insert_chart(row0 + (i // NC) * 18, (i % NC) * 9, ch)
 wb.close()
 print('written', OUT, os.path.getsize(OUT), 'bytes;', len(batches), 'batch sheets')
