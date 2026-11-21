@@ -76,6 +76,8 @@ dependencies:
   - rdkit
   - pubchempy
 
+  
+
   # --- Vector stores for RAG / "memory" ---
   - faiss-cpu
 
