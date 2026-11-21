@@ -63,7 +63,7 @@ for b in batches:
     m = d[d[T + ['volume']].notna().any(axis=1)]
     r0 = 3
     ws.write(r0, 0, 'Measurements', f_sec)
-    hdr = ['elapsed_time (days)', 'vcd', 'tcd', 'substrate', 'byproduct', 'volume', 'to_predict']
+    hdr = ['elapsed_time (days)', 'vcd', 'tcd', 'substrate', 'byproduct', 'volume', 'to_predict', 'dead cells (tcd − vcd)']
     ws.write_row(r0 + 1, 0, hdr, f_hdr)
     for i, (_, row) in enumerate(m.iterrows()):
         rr = r0 + 2 + i
@@ -75,9 +75,13 @@ for b in batches:
             else:
                 ws.write_blank(rr, j, None, f_pred if row.to_predict else f_txt)
         ws.write(rr, 6, 'TRUE' if row.to_predict else 'FALSE', f_pred if row.to_predict else f_txt)
+        if pd.notna(row.tcd) and pd.notna(row.vcd):
+            ws.write_number(rr, 7, row.tcd - row.vcd, f_num)
+        else:
+            ws.write_blank(rr, 7, None, f_pred if row.to_predict else f_txt)
     m_first, m_last = r0 + 2, r0 + 1 + len(m)
     fe = d[d[F].notna().any(axis=1)].copy()
-    c0 = 8
+    c0 = 9
     ws.write(r0, c0, 'Feed events (amount added) and running total per feed', f_sec)
     fh = ['elapsed_time (days)'] + F + ['cum_' + f for f in F]
     ws.write_row(r0 + 1, c0, fh, f_hdr)
@@ -93,7 +97,7 @@ for b in batches:
         for j, c in enumerate(F, start=1):
             ws.write_number(rr, c0 + 4 + j, cum.loc[idx, c], f_num5)
     f_first, f_last = r0 + 2, r0 + 1 + len(fe)
-    ws.set_column(0, 0, 11); ws.set_column(1, 6, 10); ws.set_column(7, 7, 2)
+    ws.set_column(0, 0, 11); ws.set_column(1, 6, 10); ws.set_column(7, 7, 12); ws.set_column(8, 8, 2)
     ws.set_column(c0, c0, 11); ws.set_column(c0 + 1, c0 + 8, 12.5)
     ws.set_row(r0 + 1, 30)
     ws.freeze_panes(r0 + 2, 0)
@@ -110,6 +114,7 @@ for b in batches:
     ch = scatter('Cell density', 'Cell density')
     ser(ch, 1, 'VCD (viable)', COL['vcd'], m_first, m_last, 0)
     ser(ch, 2, 'TCD (total)', COL['tcd'], m_first, m_last, 0)
+    ser(ch, 7, 'Dead (TCD − VCD)', '000000', m_first, m_last, 0)
     charts.append(ch)
     ch = scatter('Substrate and byproduct', 'Concentration')
     ser(ch, 3, 'Substrate', COL['substrate'], m_first, m_last, 0)
@@ -131,7 +136,7 @@ for b in batches:
             ser(ch, c0 + 4 + j, f'{c} running total (right axis)', COL['volume'], f_first, f_last, c0, y2=True)
             ch.set_y2_axis({'name': 'Running total'})
             charts.append(ch)
-    base_col = 18
+    base_col = 19
     for k, ch in enumerate(charts):
         ws.insert_chart(3 + (k // 2) * 16, base_col + (k % 2) * 9, ch)
     d0 = m.iloc[0]
@@ -176,5 +181,50 @@ for col, var in [(1, 'vcd'), (2, 'tcd'), (3, 'substrate'), (4, 'byproduct'), (5,
     ch.set_size({'width': 620, 'height': 340})
     ov.insert_chart(5 + len(summary) + 2 + (pos // 2) * 18, (pos % 2) * 9, ch)
     pos += 1
+
+# ---- Live vs dead cells, and substrate, for every batch ----
+sec = 5 + len(summary) + 2 + 3 * 18 + 2
+ov.write(sec, 0, 'Cell culture behaviour per batch: live cells (VCD), dead cells (TCD − VCD) and substrate (right axis)', f_title)
+ov.write(sec + 1, 0, 'Green = live (viable) cells, black = dead cells (both on a log-scale left axis, so the small dead-cell numbers stay visible), dashed orange = substrate concentration on the right axis. '
+                     'Test batches show day 0 only. Two overlay charts first, then one chart per batch.', f_sub)
+row0 = sec + 3
+for k, (col, nm, clr) in enumerate([(1, 'Live cells (VCD) – all training batches', '2CA02C'), (7, 'Dead cells (TCD − VCD) – all training batches', '000000')]):
+    ch = wb.add_chart({'type': 'scatter', 'subtype': 'straight'})
+    ch.set_title({'name': nm, 'name_font': {'size': 11}})
+    xaxis(ch)
+    ch.set_y_axis({'name': 'cell density', 'major_gridlines': {'visible': True, 'line': {'color': 'E7E6E6'}}})
+    ch.set_legend({'none': True})
+    ch.show_blanks_as('span')
+    for s in summary:
+        if s[1] == 'test':
+            continue
+        ch.add_series({'name': s[0], 'categories': [s[0], s[19], 0, s[20], 0], 'values': [s[0], s[19], col, s[20], col],
+                       'line': {'width': 1}})
+    ch.set_size({'width': 620, 'height': 340})
+    ov.insert_chart(row0, k * 9, ch)
+row0 += 19
+NC = 4
+for i, s in enumerate(summary):
+    ch = wb.add_chart({'type': 'scatter', 'subtype': 'straight_with_markers'})
+    ch.set_title({'name': s[0] + (' (test – day 0 only)' if s[1] == 'test' else ''), 'name_font': {'size': 10}})
+    ch.set_x_axis({'min': 0, 'max': 14, 'major_unit': 2, 'num_font': {'size': 8}})
+    ch.set_y_axis({'name': 'cells (log scale)', 'log_base': 10, 'min': 0.001, 'name_font': {'size': 8}, 'num_font': {'size': 8}, 'major_gridlines': {'visible': True, 'line': {'color': 'E7E6E6'}}})
+    ch.set_y2_axis({'name': 'substrate', 'name_font': {'size': 8}, 'num_font': {'size': 8}})
+    ch.show_blanks_as('span')
+    ch.set_legend({'position': 'bottom', 'font': {'size': 8}})
+    def add(col, name, clr, y2=False, dash=False):
+        d = {'name': name, 'categories': [s[0], s[19], 0, s[20], 0], 'values': [s[0], s[19], col, s[20], col],
+             'marker': {'type': 'circle', 'size': 4, 'fill': {'color': clr}, 'border': {'color': clr}},
+             'line': {'color': clr, 'width': 1.5}}
+        if dash:
+            d['line']['dash_type'] = 'dash'
+        if y2:
+            d['y2_axis'] = True
+        ch.add_series(d)
+    add(1, 'live (VCD)', '2CA02C')
+    add(7, 'dead (TCD−VCD)', '000000')
+    add(3, 'substrate', 'FF7F0E', y2=True, dash=True)
+    ch.set_size({'width': 400, 'height': 260})
+    ov.insert_chart(row0 + (i // NC) * 14, (i % NC) * 6, ch)
 wb.close()
 print('written', OUT, os.path.getsize(OUT), 'bytes;', len(batches), 'batch sheets')
