@@ -3,6 +3,9 @@
 
 # ODE model configs (source) stay; simulation outputs ignored
 /lab/ode/*.npy
+*.npy
+*.npz
+*.html
 
 # Keep only the 3 key OOF results, ignore the rest
 /lab/oof/*
