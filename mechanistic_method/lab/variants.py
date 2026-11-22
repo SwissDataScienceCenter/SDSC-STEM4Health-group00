@@ -97,5 +97,15 @@ class M19(Model):
 class M20(Model): name='m20_re6_cov10'; desc='m14 with 10 process signals'; zset='z10'; parent='m14_re6'; RE=('mumax','mS','Yov','kc','qov','KI')
 @reg
 class M21(Model): name='m21_re8'; desc='m02 with covariates on 8 parameters (adds death rate and substrate feed concentration)'; zset='z7'; parent='m14_re6'; RE=('mumax','mS','Yov','kc','qov','KI','kd1','cb')
+@reg
+class M22(Model):
+    name='m22_bypfix'; desc='m02 + substrate-dependent byproduct consumption (S/(K+S) instead of Kg/(Kg+S)) + substrate-thresholded overflow'; zset='z7'; parent='m02_cov7'
+    def spec(self):
+        s=dict(BASE_SPEC); s.update(K_cons=(0.5,.01,20,'log'),So=(.1,.001,2.,'log'),Kov=(.2,.01,5,'log')); return s
+    def ov(self,p,s):
+        Seff=np.maximum(s['S']-p['So'],0.0)
+        return p['qov']*Seff/(p['Kov']+Seff)/(1+(np.maximum(s['I'],1e-9)/p['KIo'])**p['no'])
+    def cons(self,p,s):
+        return p['kc']*s['P']*s['S']/(p['K_cons']+s['S'])
 if __name__=='__main__':
     for nm in sys.argv[1:]: run(V[nm]())
